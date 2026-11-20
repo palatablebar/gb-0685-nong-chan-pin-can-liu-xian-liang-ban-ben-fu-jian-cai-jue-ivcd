@@ -10,7 +10,7 @@
 | M2 项目映射 | 查看并复算项目映射 | `/api/m2_mapping` | `app/modules/m2_mapping/rules.py` | `tests/test_mapping.py` |
 | M3 限量选版 | 查看并复算限量选版 | `/api/m3_versions` | `app/modules/m3_versions/rules.py` | `tests/test_versions.py` |
 | M4 检出量换算 | 查看并复算检出量换算 | `/api/m4_segments` | `app/modules/m4_segments/rules.py` | `tests/test_segments.py` |
-| M5 复检裁决 | 查看并复算复检裁决 | `/api/m5_calculate` | `app/modules/m5_calculate/rules.py` | `tests/test_calculate.py` |
+| M5 复检裁决 | 查看并复算复检裁决 | `/api/m5_calculate` | `app/modules/m5_calculate/rules.py`、`app/modules/m5_calculate/evidence.py` | `tests/test_calculate.py`、`tests/test_evidence.py` |
 | M6 批次判级 | 查看并复算批次判级 | `/api/m6_reconcile` | `app/modules/m6_reconcile/compare.py` | `tests/test_reconcile.py` |
 | M7 报告归档 | 查看并复算报告归档 | `/api/m7_archive` | `app/modules/m7_archive/export_out.py` | `tests/test_archive.py` |
 
@@ -32,6 +32,11 @@
 | TRAP-15 | ug/kg与mg/kg | 差1000倍 | 浓度统一mg/kg | `app/modules/m4_segments/rules.py` | `tests/test_segments.py::test_unit_conversion` |
 | TRAP-25 | 标准时间边界 | 双版或错版 | 采样日半开区间选版 | `app/modules/m3_versions/standards.py` | `tests/test_versions.py::test_halfopen_effective` |
 | TRAP-20 | 复检引用环 | 遍历无法结束 | 引用路径检测 | `app/modules/m5_calculate/rules.py` | `tests/test_calculate.py::test_cycle_rejected` |
+| TRAP-27 | 超期复检无据受理 | 直接采信最新复检推翻原判定 | 保存/温控证据裁决 | `app/modules/m5_calculate/evidence.py` | `tests/test_evidence.py::test_missing_storage_evidence_recovers_old_conclusion` |
+| TRAP-28 | 冷链短时升温 | 一律拒绝拖住整批 | 累计升温在此允差内条件受理 | `app/modules/m5_calculate/evidence.py` | `tests/test_evidence.py::test_short_excursion_within_tolerance_is_conditional` |
+| TRAP-29 | 证据不足处理中断 | 部分受理或丢失原始温控记录 | 回退旧版结论并保全证据 | `app/modules/m5_calculate/evidence.py` | `tests/test_evidence.py::test_interrupted_processing_preserves_raw_records` |
+| TRAP-30 | 三处结论各算各的 | 判定/批次/封存依据不一致 | 共用 basis_id | `app/modules/m5_calculate/rules.py` | `tests/test_evidence.py::test_batch_and_seal_share_basis` |
+| TRAP-31 | 同一复检重跑 | 证据记录重复堆积 | 按 id 去重、幂等指纹 | `app/modules/m5_calculate/evidence.py` | `tests/test_evidence.py::test_rerun_does_not_duplicate_evidence_records` |
 
 ## 对账规则
 

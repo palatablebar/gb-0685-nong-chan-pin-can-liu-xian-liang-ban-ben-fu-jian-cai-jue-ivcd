@@ -12,11 +12,14 @@ def run(content,parameters=None,stage=7):
     if len(content)>2_000_000:raise DomainError('SIZE','文件超过2MB',413)
     params=parameters or {}
     if not isinstance(params,dict):raise DomainError('PARAMETERS','参数必须是对象')
+    from app.modules.m5_calculate.evidence import bundled_evidence
+    source_evidence=bundled_evidence(content)
     start=time.monotonic();state=None
     for n,entry in enumerate(MODULES,1):
         if n>stage:break
         fn=importlib.import_module('app.modules.'+entry[0]+'.service').execute
         state=fn(content,params) if n==1 else fn(state)
+        if n==1:state['source_evidence']=source_evidence
     # Decimal values are serialized as strings before any storage or response.
     state=json.loads(json.dumps(state,default=str,ensure_ascii=False))
     state['run_id']=identity(content,params);state['manifest']=manifest(content,params,time.monotonic()-start)

@@ -1,6 +1,7 @@
 from collections import defaultdict
 from decimal import Decimal
 from app.errors import DomainError
+from app.modules.m5_calculate.evidence import adjudicate,raw_inputs
 
 def select_reports(reports):
     versions={}
@@ -39,11 +40,41 @@ def select_reports(reports):
         chosen=sorted(newest,key=lambda x:x['id'])[0];valid.append(chosen)
     return valid,bad
 
+def _evidence_fallback(reason):
+    if reason=='COLDCHAIN':return 'COLDCHAIN'
+    if reason=='RETENTION':return 'RETENTION'
+    return 'EVIDENCE'
+
 def apply(state):
-    chosen,bad=select_reports(state['measurements']);lines=set()
+    # 保存/温控证据是复检受理的唯一依据；项目判定、批次判级与封存资格共用此结论。
+    try:
+        basis=adjudicate(state['measurements'],state.get('parameters'),state.get('source_evidence'))
+    except Exception as exc:  # noqa: BLE001 - 处理中断：拒绝全部复检，恢复旧版结论
+        basis={'basis_id':'interrupted','records':[],'status':'interrupted',
+            'summary':{'retests':0,'admitted':0,'conditional':0,'rejected':0},
+            'evidence':{'input':0,'used':0,'isolated':0,'balanced':False,'isolated_records':[],
+                'interrupted':str(exc)},'inputs':raw_inputs(state.get('parameters'),state.get('source_evidence'))}
+    state['evidence']=basis
+    decisions={r['id']:r for r in basis['records']}
+    # 只有顶层裁决本身中断（无任何记录、证据账不平）才整体恢复旧版结论；
+    # 单条复检处理中断只隔离该条，不拖住同批其他有效复检。
+    total_interrupt=basis['status']=='interrupted' and not basis['records']
+    lines=set()
     for r in state['measurements']:
+        verdict=decisions.get(r['id'])
+        interrupted_kill=total_interrupt and bool(r.get('relation'))
+        if interrupted_kill or (verdict and not verdict['admitted']):
+            lines.add(r['_line'])
+            code=_evidence_fallback(verdict['reason']) if verdict else 'EVIDENCE'
+            state['quarantine'].append({'line':r['_line'],'id':r['id'],'code':code,'raw':r['_raw']})
+    # 未被受理的复检行隔离后，其原始报告仍参与选版，从而恢复旧版结论。
+    remaining=[r for r in state['measurements'] if r['_line'] not in lines]
+    chosen,bad=select_reports(remaining)
+    for r in remaining:
         if r['id'] in bad:
             lines.add(r['_line']);state['quarantine'].append({'line':r['_line'],'id':r['id'],'code':bad[r['id']],'raw':r['_raw']})
     state['rows']=[r for r in state['rows'] if r['_line'] not in lines]
-    calculations=[{'id':r['id'],'line':r['_line'],'sample_id':r['sample_id'],'batch':r['batch'],'analyte':r['analyte'],'method':r['method'],'standard':r['standard_id'],'lower':r['lower'],'upper':r['upper'],'upper_exclusive':r['upper_exclusive'],'limit':r['limit'],'code':r['code'],'replaces':r['relation']} for r in chosen if r['id'] not in bad]
-    state['calculations']=calculations;state['business']={'total':len(calculations),'pass':sum(r['code']=='PASS' for r in calculations),'fail':sum(r['code']=='FAIL' for r in calculations),'uncertain':sum(r['code']=='UNCERTAIN' for r in calculations),'unit':'检测项目'};return state
+    calculations=[{'id':r['id'],'line':r['_line'],'sample_id':r['sample_id'],'batch':r['batch'],'analyte':r['analyte'],'method':r['method'],'standard':r['standard_id'],'lower':r['lower'],'upper':r['upper'],'upper_exclusive':r['upper_exclusive'],'limit':r['limit'],'code':r['code'],'replaces':r['relation'],'evidence':decisions.get(r['id'],{}).get('status','regular'),'basis_id':basis['basis_id']} for r in chosen if r['id'] not in bad]
+    state['calculations']=calculations
+    state['business']={'total':len(calculations),'pass':sum(r['code']=='PASS' for r in calculations),'fail':sum(r['code']=='FAIL' for r in calculations),'uncertain':sum(r['code']=='UNCERTAIN' for r in calculations),'unit':'检测项目'}
+    return state
